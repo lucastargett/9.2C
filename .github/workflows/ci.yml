@@ -1,89 +1,101 @@
+# ==========================================================
+# CI (Monorepo) - Build, Lint and Push Images
+# ==========================================================
 name: CI (Monorepo)
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
     paths:
       - "backend/**"
       - "frontend/**"
       - ".github/workflows/ci.yml"
   pull_request:
-    branches: [ main ]
-  workflow_dispatch:
+    branches:
+      - main
 
-# Top-level ENV (no cross-references here)
 env:
   ACR_NAME: lucasacr9c
-  ACR_LOGIN_SERVER: lucasacr9c.azurecr.io
+  REGISTRY_FQDN: lucasacr9c.azurecr.io
+  IMAGE_TAG: ${{ github.sha }}
 
 jobs:
   test_and_lint_backends:
+    name: Test and Lint Backends
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
-      - name: No-op test placeholder
-        run: echo "tests passed"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+
+      - name: Lint Python code
+        run: |
+          cd backend
+          pip install flake8
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics || true
 
   build_and_push_images:
+    name: Build and Push Backend Images
     runs-on: ubuntu-latest
     needs: test_and_lint_backends
+
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Azure Login
+      - name: Log in to Azure
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Login to Azure Container Registry
-        run: az acr login --name "${{ env.ACR_NAME }}"
+      - name: Log in to Azure Container Registry
+        run: az acr login --name ${{ env.ACR_NAME }}
 
-      - name: Build Product Service image
+      - name: Build and Push Product Service Image
         run: |
-          docker build \
-            -t "${{ env.ACR_LOGIN_SERVER }}/product_service:latest" \
-            ./backend/product_service
+          docker build -t ${{ env.REGISTRY_FQDN }}/product_service:${{ env.IMAGE_TAG }} ./backend/product_service
+          docker push ${{ env.REGISTRY_FQDN }}/product_service:${{ env.IMAGE_TAG }}
 
-      - name: Push Product Service image
-        run: docker push "${{ env.ACR_LOGIN_SERVER }}/product_service:latest"
-
-      - name: Build Order Service image
+      - name: Build and Push Order Service Image
         run: |
-          docker build \
-            -t "${{ env.ACR_LOGIN_SERVER }}/order_service:latest" \
-            ./backend/order_service
+          docker build -t ${{ env.REGISTRY_FQDN }}/order_service:${{ env.IMAGE_TAG }} ./backend/order_service
+          docker push ${{ env.REGISTRY_FQDN }}/order_service:${{ env.IMAGE_TAG }}
 
-      - name: Push Order Service image
-        run: docker push "${{ env.ACR_LOGIN_SERVER }}/order_service:latest"
-
-      - name: Logout Azure
+      - name: Logout from Azure
         run: az logout
 
   build_and_push_frontend:
+    name: Build and Push Frontend
     runs-on: ubuntu-latest
     needs: test_and_lint_backends
+
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Azure Login
+      - name: Log in to Azure
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Login to Azure Container Registry
-        run: az acr login --name "${{ env.ACR_NAME }}"
+      - name: Log in to Azure Container Registry
+        run: az acr login --name ${{ env.ACR_NAME }}
 
-      - name: Build Frontend image
+      - name: Build and Push Frontend Image
         run: |
-          docker build \
-            -t "${{ env.ACR_LOGIN_SERVER }}/frontend:latest" \
-            ./frontend
+          docker build -t ${{ env.REGISTRY_FQDN }}/frontend:${{ env.IMAGE_TAG }} ./frontend
+          docker push ${{ env.REGISTRY_FQDN }}/frontend:${{ env.IMAGE_TAG }}
 
-      - name: Push Frontend image
-        run: docker push "${{ env.ACR_LOGIN_SERVER }}/frontend:latest"
-
-      - name: Logout Azure
+      - name: Logout from Azure
         run: az logout
