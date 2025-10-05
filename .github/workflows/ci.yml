@@ -11,19 +11,17 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-# ---- Adjust these if you ever rename the registry ----
+# Top-level ENV (no cross-references here)
 env:
   ACR_NAME: lucasacr9c
-  ACR_LOGIN_SERVER: ${{ env.ACR_NAME }}.azurecr.io
+  ACR_LOGIN_SERVER: lucasacr9c.azurecr.io
 
 jobs:
-  # Keep whatever tests you already run; this is a lightweight placeholder.
   test_and_lint_backends:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      # (add your real test/lint steps here)
       - name: No-op test placeholder
         run: echo "tests passed"
 
@@ -42,21 +40,21 @@ jobs:
       - name: Login to Azure Container Registry
         run: az acr login --name "${{ env.ACR_NAME }}"
 
-      # --- Product service image ---
       - name: Build Product Service image
         run: |
           docker build \
             -t "${{ env.ACR_LOGIN_SERVER }}/product_service:latest" \
             ./backend/product_service
+
       - name: Push Product Service image
         run: docker push "${{ env.ACR_LOGIN_SERVER }}/product_service:latest"
 
-      # --- Order service image ---
       - name: Build Order Service image
         run: |
           docker build \
             -t "${{ env.ACR_LOGIN_SERVER }}/order_service:latest" \
             ./backend/order_service
+
       - name: Push Order Service image
         run: docker push "${{ env.ACR_LOGIN_SERVER }}/order_service:latest"
 
@@ -83,6 +81,7 @@ jobs:
           docker build \
             -t "${{ env.ACR_LOGIN_SERVER }}/frontend:latest" \
             ./frontend
+
       - name: Push Frontend image
         run: docker push "${{ env.ACR_LOGIN_SERVER }}/frontend:latest"
 
