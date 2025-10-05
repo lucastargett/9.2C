@@ -119,15 +119,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Azure login using a Service Principal secret
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # ✅ Fixed: Properly login to ACR by name
       - name: Login to Azure Container Registry
-        run: az acr login --name ${{ github.event.inputs.aks_acr_name }}
+        run: |
+          ACR_NAME=${{ github.event.inputs.aks_acr_name }}
+          echo "Logging into ACR: $ACR_NAME.azurecr.io"
+          az acr login --name $ACR_NAME
 
       - name: Inject Backend IPs into Frontend main.js
         run: |
@@ -139,8 +140,10 @@ jobs:
 
       - name: Build and Push Frontend Image
         run: |
-          docker build -t ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest ./frontend/
-          docker push ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest
+          ACR_NAME=${{ github.event.inputs.aks_acr_name }}
+          echo "Building and pushing image to $ACR_NAME.azurecr.io"
+          docker build -t $ACR_NAME.azurecr.io/frontend:latest ./frontend/
+          docker push $ACR_NAME.azurecr.io/frontend:latest
 
       - name: Set Kubernetes context (get AKS credentials)
         uses: azure/aks-set-context@v3
