@@ -1,9 +1,7 @@
-# week08/k8s/order-service.yaml
-
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: order-service-w08e1 # Deployment name matches
+  name: order-service-w08e1
   labels:
     app: order-service
 spec:
@@ -17,34 +15,34 @@ spec:
         app: order-service
     spec:
       containers:
-      - name: order-service-container
-        image: ltweek08acr.azurecr.io/order_service:latest
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 8000
-        env:
-        - name: POSTGRES_HOST
-          value: order-db-service-w08e1
-        - name: POSTGRES_DB
-          valueFrom:
-            configMapKeyRef:
-              name: ecomm-config-w08e1
-              key: ORDERS_DB_NAME
-        - name: POSTGRES_USER
-          valueFrom:
-            secretKeyRef:
-              name: ecomm-secrets-w08e1
-              key: POSTGRES_USER
-        - name: POSTGRES_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: ecomm-secrets-w08e1
-              key: POSTGRES_PASSWORD
-        - name: PRODUCT_SERVICE_URL
-          valueFrom:
-            configMapKeyRef:
-              name: ecomm-config-w08e1
-              key: PRODUCT_SERVICE_URL
+        - name: order-service-container
+          image: lucasacr9c.azurecr.io/order_service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          env:
+            - name: POSTGRES_HOST
+              value: order-db-service-w08e1
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: ecomm-config-w08e1
+                  key: ORDERS_DB_NAME
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ecomm-secrets-w08e1
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ecomm-secrets-w08e1
+                  key: POSTGRES_PASSWORD
+            - name: PRODUCT_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: ecomm-config-w08e1
+                  key: PRODUCT_SERVICE_URL
 ---
 apiVersion: v1
 kind: Service
@@ -53,10 +51,10 @@ metadata:
   labels:
     app: order-service
 spec:
+  type: LoadBalancer
   selector:
     app: order-service
   ports:
     - protocol: TCP
       port: 8001
       targetPort: 8000
-  type: LoadBalancer

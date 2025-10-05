@@ -1,5 +1,3 @@
-# week08/k8s/product-service.yaml
-
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -17,50 +15,52 @@ spec:
         app: product-service
     spec:
       containers:
-      - name: product-service-container
-        image: ltweek08acr.azurecr.io/product_service:latest
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 8000
-        env:
-        # Database connection details
-        - name: POSTGRES_HOST
-          value: product-db-service-w08e1
-        - name: POSTGRES_DB
-          valueFrom:
-            configMapKeyRef:
-              name: ecomm-config-w08e1
-              key: PRODUCTS_DB_NAME
-        - name: POSTGRES_USER
-          valueFrom:
-            secretKeyRef:
-              name: ecomm-secrets-w08e1 # Secret name matches
-              key: POSTGRES_USER
-        - name: POSTGRES_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: ecomm-secrets-w08e1 # Secret name matches
-              key: POSTGRES_PASSWORD
-        - name: AZURE_STORAGE_ACCOUNT_NAME
-          valueFrom:
-            secretKeyRef:
-              name: ecomm-secrets-w08e1 # Secret name matches
-              key: AZURE_STORAGE_ACCOUNT_NAME
-        - name: AZURE_STORAGE_ACCOUNT_KEY
-          valueFrom:
-            secretKeyRef:
-              name: ecomm-secrets-w08e1 # Secret name matches
-              key: AZURE_STORAGE_ACCOUNT_KEY
-        - name: AZURE_STORAGE_CONTAINER_NAME
-          valueFrom:
-            configMapKeyRef:
-              name: ecomm-config-w08e1 # ConfigMap name matches
-              key: AZURE_STORAGE_CONTAINER_NAME
-        - name: AZURE_SAS_TOKEN_EXPIRY_HOURS
-          valueFrom:
-            configMapKeyRef:
-              name: ecomm-config-w08e1 # ConfigMap name matches
-              key: AZURE_SAS_TOKEN_EXPIRY_HOURS
+        - name: product-service-container
+          image: lucasacr9c.azurecr.io/product_service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          env:
+            # Database connection details
+            - name: POSTGRES_HOST
+              value: product-db-service-w08e1
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: ecomm-config-w08e1
+                  key: PRODUCTS_DB_NAME
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ecomm-secrets-w08e1
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ecomm-secrets-w08e1
+                  key: POSTGRES_PASSWORD
+
+            # Azure Storage configuration
+            - name: AZURE_STORAGE_ACCOUNT_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: ecomm-secrets-w08e1
+                  key: AZURE_STORAGE_ACCOUNT_NAME
+            - name: AZURE_STORAGE_ACCOUNT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ecomm-secrets-w08e1
+                  key: AZURE_STORAGE_ACCOUNT_KEY
+            - name: AZURE_STORAGE_CONTAINER_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: ecomm-config-w08e1
+                  key: AZURE_STORAGE_CONTAINER_NAME
+            - name: AZURE_SAS_TOKEN_EXPIRY_HOURS
+              valueFrom:
+                configMapKeyRef:
+                  name: ecomm-config-w08e1
+                  key: AZURE_SAS_TOKEN_EXPIRY_HOURS
 ---
 apiVersion: v1
 kind: Service
@@ -69,10 +69,10 @@ metadata:
   labels:
     app: product-service
 spec:
+  type: LoadBalancer
   selector:
     app: product-service
   ports:
     - protocol: TCP
       port: 8000
       targetPort: 8000
-  type: LoadBalancer
