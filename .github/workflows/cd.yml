@@ -1,4 +1,4 @@
-# Compiled CD workflows
+# Compiled CD workflows 
 name: CD - Deploy Backend and Frontend to AKS
 
 on:
@@ -13,15 +13,15 @@ on:
         required: true
         default: 'deakinuni'
       aks_acr_name:
-        description: 'Name of ACR (no domain, e.g. lucasacr9c)'
+        description: 'Name of ACR'
         required: true
         default: 'lucasacr9c'
       product_api_ip:
-        description: 'External IP of Product Service (optional override)'
+        description: 'External IP of Product Service'
         required: false
         default: ''
       order_api_ip:
-        description: 'External IP of Order Service (optional override)'
+        description: 'External IP of Order Service'
         required: false
         default: ''
 
@@ -29,10 +29,10 @@ jobs:
   deploy_backend:
     runs-on: ubuntu-latest
     environment: Production
-
+    
     outputs:
       PRODUCT_API_IP: ${{ steps.get_product_ip.outputs.external_ip }}
-      ORDER_API_IP:   ${{ steps.get_order_ip.outputs.external_ip }}
+      ORDER_API_IP: ${{ steps.get_order_ip.outputs.external_ip }}
 
     steps:
       - name: Checkout repository
@@ -46,19 +46,16 @@ jobs:
 
       - name: Set Kubernetes context (get AKS credentials)
         run: |
-          az aks get-credentials \
-            --resource-group "${{ github.event.inputs.aks_resource_group }}" \
-            --name "${{ github.event.inputs.aks_cluster_name }}" \
-            --overwrite-existing
+          az aks get-credentials --resource-group ${{ github.event.inputs.aks_resource_group }} \
+            --name ${{ github.event.inputs.aks_cluster_name }} --overwrite-existing
 
-      - name: Attach ACR to AKS
+      - name: Attach ACR
         run: |
-          az aks update \
-            --name "${{ github.event.inputs.aks_cluster_name }}" \
-            --resource-group "${{ github.event.inputs.aks_resource_group }}" \
-            --attach-acr "${{ github.event.inputs.aks_acr_name }}"
+          az aks update --name ${{ github.event.inputs.aks_cluster_name }} \
+            --resource-group ${{ github.event.inputs.aks_resource_group }} \
+            --attach-acr ${{ github.event.inputs.aks_acr_name }}
 
-      - name: Deploy Backend Infrastructure (Namespace, ConfigMaps, Secrets, DBs)
+      - name: Deploy Backend Infrastructure (Namespace, ConfigMaps, Secrets, Databases)
         run: |
           echo "Deploying backend infrastructure..."
           cd k8s/
@@ -73,31 +70,39 @@ jobs:
           cd k8s/
           kubectl apply -f product-service.yaml
           kubectl apply -f order-service.yaml
-
+      
       - name: Wait for Backend LoadBalancer IPs
         run: |
-          echo "Waiting for Product & Order LoadBalancer IPs (up to 5 minutes)..."
+          echo "Waiting for Product, Order LoadBalancer IPs to be assigned (up to 5 minutes)..."
           PRODUCT_IP=""
           ORDER_IP=""
+          
           for i in $(seq 1 60); do
-            PRODUCT_IP=$(kubectl get svc product-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
-            ORDER_IP=$(kubectl get svc order-service-w08e1   -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
-            [[ -n "$PRODUCT_IP" && -n "$ORDER_IP" ]] && break
+            echo "Attempt $i/60 to get IPs..."
+            PRODUCT_IP=$(kubectl get service product-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+            ORDER_IP=$(kubectl get service order-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+
+            if [[ -n "$PRODUCT_IP" && -n "$ORDER_IP" ]]; then
+              echo "All backend LoadBalancer IPs assigned!"
+              echo "Product Service IP: $PRODUCT_IP"
+              echo "Order Service IP: $ORDER_IP"
+              break
+            fi
             sleep 5
           done
+          
           if [[ -z "$PRODUCT_IP" || -z "$ORDER_IP" ]]; then
-            echo "Error: one or more LoadBalancer IPs were not assigned in time."
-            kubectl get svc -o wide
+            echo "Error: One or more LoadBalancer IPs not assigned after timeout."
             exit 1
           fi
+          
           echo "PRODUCT_IP=$PRODUCT_IP" >> $GITHUB_ENV
-          echo "ORDER_IP=$ORDER_IP"       >> $GITHUB_ENV
-          echo "Product: $PRODUCT_IP | Order: $ORDER_IP"
+          echo "ORDER_IP=$ORDER_IP" >> $GITHUB_ENV
 
       - name: Capture Product Service IP for Workflow Output
         id: get_product_ip
         run: echo "external_ip=${{ env.PRODUCT_IP }}" >> $GITHUB_OUTPUT
-
+      
       - name: Capture Order Service IP for Workflow Output
         id: get_order_ip
         run: echo "external_ip=${{ env.ORDER_IP }}" >> $GITHUB_OUTPUT
@@ -110,47 +115,47 @@ jobs:
     environment: Production
     needs: deploy_backend
 
-    env:
-      REGISTRY: ${{ github.event.inputs.aks_acr_name }}.azurecr.io
-      PRODUCT_API_IP_FROM_BACKEND: ${{ needs.deploy_backend.outputs.PRODUCT_API_IP }}
-      ORDER_API_IP_FROM_BACKEND:   ${{ needs.deploy_backend.outputs.ORDER_API_IP }}
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Azure Login (SP)
+      # Azure login using a Service Principal secret
+      - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      # ✅ Fixed: Properly login to ACR by name
       - name: Login to Azure Container Registry
-        run: az acr login --name "${{ github.event.inputs.aks_acr_name }}"
+        run: az acr login --name ${{ github.event.inputs.aks_acr_name }}
 
       - name: Inject Backend IPs into Frontend main.js
         run: |
           echo "Injecting IPs into frontend/main.js"
-          sed -i "s|_PRODUCT_API_URL_|${PRODUCT_API_IP_FROM_BACKEND}|g" frontend/main.js
-          sed -i "s|_ORDER_API_URL_|${ORDER_API_IP_FROM_BACKEND}|g"   frontend/main.js
-          echo "--- Modified main.js ---"
-          tail -n +1 frontend/main.js
+          sed -i "s|_PRODUCT_API_URL_|${{ needs.deploy_backend.outputs.PRODUCT_API_IP }}|g" frontend/main.js
+          sed -i "s|_ORDER_API_URL_|${{ needs.deploy_backend.outputs.ORDER_API_IP }}|g" frontend/main.js
+          echo "--- Modified main.js content ---"
+          cat frontend/main.js
 
+      # ✅ FIXED: Use ACR name input instead of undefined secret
       - name: Build and Push Frontend Image
         run: |
-          docker build -t "${REGISTRY}/frontend:latest" ./frontend/
-          docker push "${REGISTRY}/frontend:latest"
+          echo "Building and pushing frontend image..."
+          ACR_NAME=${{ github.event.inputs.aks_acr_name }}
+          docker build -t $ACR_NAME.azurecr.io/frontend:latest ./frontend/
+          docker push $ACR_NAME.azurecr.io/frontend:latest
 
       - name: Set Kubernetes context (get AKS credentials)
         uses: azure/aks-set-context@v3
         with:
           resource-group: ${{ github.event.inputs.aks_resource_group }}
-          cluster-name:  ${{ github.event.inputs.aks_cluster_name }}
+          cluster-name: ${{ github.event.inputs.aks_cluster_name }}
 
       - name: Deploy Frontend to AKS
         run: |
-          echo "Deploying frontend image ${REGISTRY}/frontend:latest"
+          echo "Deploying frontend with latest image to AKS cluster: ${{ github.event.inputs.aks_cluster_name }}"
           cd k8s/
           kubectl apply -f frontend.yaml
 
-      - name: Logout from Azure
+      - name: Logout from Azure (AKS deployment)
         run: az logout
