@@ -13,7 +13,7 @@ on:
         required: true
         default: 'deakinuni'
       aks_acr_name:
-        description: 'Name of ACR'
+        description: 'Name of ACR (no .azurecr.io)'
         required: true
         default: 'lucasacr9c'
       product_api_ip:
@@ -32,7 +32,7 @@ jobs:
 
     outputs:
       PRODUCT_API_IP: ${{ steps.get_product_ip.outputs.external_ip }}
-      ORDER_API_IP: ${{ steps.get_order_ip.outputs.external_ip }}
+      ORDER_API_IP:   ${{ steps.get_order_ip.outputs.external_ip }}
 
     steps:
       - name: Checkout repository
@@ -46,12 +46,15 @@ jobs:
 
       - name: Set Kubernetes context (get AKS credentials)
         run: |
-          az aks get-credentials --resource-group ${{ github.event.inputs.aks_resource_group }} \
-            --name ${{ github.event.inputs.aks_cluster_name }} --overwrite-existing
+          az aks get-credentials \
+            --resource-group ${{ github.event.inputs.aks_resource_group }} \
+            --name ${{ github.event.inputs.aks_cluster_name }} \
+            --overwrite-existing
 
       - name: Attach ACR
         run: |
-          az aks update --name ${{ github.event.inputs.aks_cluster_name }} \
+          az aks update \
+            --name ${{ github.event.inputs.aks_cluster_name }} \
             --resource-group ${{ github.event.inputs.aks_resource_group }} \
             --attach-acr ${{ github.event.inputs.aks_acr_name }}
 
@@ -80,11 +83,12 @@ jobs:
           for i in $(seq 1 60); do
             echo "Attempt $i/60 to get IPs..."
             PRODUCT_IP=$(kubectl get service product-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
-            ORDER_IP=$(kubectl get service order-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+            ORDER_IP=$(kubectl get service order-service-w08e1   -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+
             if [[ -n "$PRODUCT_IP" && -n "$ORDER_IP" ]]; then
               echo "All backend LoadBalancer IPs assigned!"
               echo "Product Service IP: $PRODUCT_IP"
-              echo "Order Service IP: $ORDER_IP"
+              echo "Order  Service IP: $ORDER_IP"
               break
             fi
             sleep 5
@@ -96,7 +100,7 @@ jobs:
           fi
 
           echo "PRODUCT_IP=$PRODUCT_IP" >> $GITHUB_ENV
-          echo "ORDER_IP=$ORDER_IP" >> $GITHUB_ENV
+          echo "ORDER_IP=$ORDER_IP"     >> $GITHUB_ENV
 
       - name: Capture Product Service IP for Workflow Output
         id: get_product_ip
@@ -123,6 +127,10 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Define ACR host
+        id: acr
+        run: echo "host=${{ github.event.inputs.aks_acr_name }}.azurecr.io" >> $GITHUB_OUTPUT
+
       - name: Login to Azure Container Registry
         run: az acr login --name ${{ github.event.inputs.aks_acr_name }}
 
@@ -130,23 +138,24 @@ jobs:
         run: |
           echo "Injecting IPs into frontend/main.js"
           sed -i "s|_PRODUCT_API_URL_|${{ needs.deploy_backend.outputs.PRODUCT_API_IP }}|g" frontend/main.js
-          sed -i "s|_ORDER_API_URL_|${{ needs.deploy_backend.outputs.ORDER_API_IP }}|g" frontend/main.js
+          sed -i "s|_ORDER_API_URL_|${{ needs.deploy_backend.outputs.ORDER_API_IP }}|g"     frontend/main.js
           echo "--- Modified main.js content ---"
           cat frontend/main.js
 
       - name: Build and Push Frontend Image
         env:
-          ACR_REGISTRY: ${{ github.event.inputs.aks_acr_name }}.azurecr.io
+          ACR_HOST: ${{ steps.acr.outputs.host }}
         run: |
-          echo "Using registry: $ACR_REGISTRY"
-          docker build -t $ACR_REGISTRY/frontend:latest ./frontend/
-          docker push $ACR_REGISTRY/frontend:latest
+          set -e
+          echo "ACR host: $ACR_HOST"
+          docker build -t $ACR_HOST/frontend:latest ./frontend/
+          docker push   $ACR_HOST/frontend:latest
 
       - name: Set Kubernetes context (get AKS credentials)
         uses: azure/aks-set-context@v3
         with:
           resource-group: ${{ github.event.inputs.aks_resource_group }}
-          cluster-name: ${{ github.event.inputs.aks_cluster_name }}
+          cluster-name:  ${{ github.event.inputs.aks_cluster_name }}
 
       - name: Deploy Frontend to AKS
         run: |
