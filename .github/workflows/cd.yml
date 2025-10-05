@@ -76,12 +76,10 @@ jobs:
           echo "Waiting for Product, Order LoadBalancer IPs to be assigned (up to 5 minutes)..."
           PRODUCT_IP=""
           ORDER_IP=""
-          
           for i in $(seq 1 60); do
             echo "Attempt $i/60 to get IPs..."
             PRODUCT_IP=$(kubectl get service product-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
             ORDER_IP=$(kubectl get service order-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
-
             if [[ -n "$PRODUCT_IP" && -n "$ORDER_IP" ]]; then
               echo "All backend LoadBalancer IPs assigned!"
               echo "Product Service IP: $PRODUCT_IP"
@@ -90,12 +88,10 @@ jobs:
             fi
             sleep 5
           done
-          
           if [[ -z "$PRODUCT_IP" || -z "$ORDER_IP" ]]; then
             echo "Error: One or more LoadBalancer IPs not assigned after timeout."
             exit 1
           fi
-          
           echo "PRODUCT_IP=$PRODUCT_IP" >> $GITHUB_ENV
           echo "ORDER_IP=$ORDER_IP" >> $GITHUB_ENV
 
@@ -126,24 +122,25 @@ jobs:
 
       - name: Login to Azure Container Registry
         run: |
-          ACR_NAME=${{ github.event.inputs.aks_acr_name }}
+          ACR_NAME="${{ github.event.inputs.aks_acr_name }}"
           echo "Logging into ACR: $ACR_NAME.azurecr.io"
-          az acr login --name $ACR_NAME
+          az acr login --name "$ACR_NAME"
 
       - name: Inject Backend IPs into Frontend main.js
         run: |
           echo "Injecting backend IPs into frontend/main.js"
           sed -i "s|_PRODUCT_API_URL_|${{ needs.deploy_backend.outputs.PRODUCT_API_IP }}|g" frontend/main.js
           sed -i "s|_ORDER_API_URL_|${{ needs.deploy_backend.outputs.ORDER_API_IP }}|g" frontend/main.js
+          echo "---- main.js (after) ----"
           cat frontend/main.js
 
       - name: Build and Push Frontend Image
         run: |
-          ACR_NAME=${{ github.event.inputs.aks_acr_name }}
+          ACR_NAME="${{ github.event.inputs.aks_acr_name }}"
           IMAGE_TAG="$ACR_NAME.azurecr.io/frontend:latest"
           echo "Building image: $IMAGE_TAG"
-          docker build -t $IMAGE_TAG ./frontend
-          docker push $IMAGE_TAG
+          docker build -t "$IMAGE_TAG" ./frontend
+          docker push "$IMAGE_TAG"
 
       - name: Set Kubernetes context (get AKS credentials)
         uses: azure/aks-set-context@v3
@@ -153,7 +150,7 @@ jobs:
 
       - name: Deploy Frontend to AKS
         run: |
-          echo "Deploying frontend image to AKS"
+          echo "Deploying frontend"
           cd k8s/
           kubectl apply -f frontend.yaml
 
