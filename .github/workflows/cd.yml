@@ -7,22 +7,22 @@ on:
       aks_cluster_name:
         description: 'Name of the AKS Cluster to deploy to'
         required: true
-        default: '<aks_cluster_name>'
+        default: 'aks-9-2c'
       aks_resource_group:
         description: 'Resource Group of the AKS Cluster'
         required: true
-        default: '<resource_group_name>'
+        default: 'deakinuni'
       aks_acr_name:
         description: 'Name of ACR'
         required: true
-        default: '<acr_name>'
+        default: 'lucasacr9c'
       product_api_ip:
         description: 'External IP of Product Service'
-        required: false # No longer required to be true, frontend can use backend outputs automatically
+        required: false
         default: ''
       order_api_ip:
         description: 'External IP of Order Service'
-        required: false # Same here
+        required: false
         default: ''
 
 jobs:
@@ -76,8 +76,8 @@ jobs:
           
           for i in $(seq 1 60); do
             echo "Attempt $i/60 to get IPs..."
-            PRODUCT_IP=$(kubectl get service product-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-            ORDER_IP=$(kubectl get service order-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            PRODUCT_IP=$(kubectl get service product-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            ORDER_IP=$(kubectl get service order-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 
             if [[ -n "$PRODUCT_IP" && -n "$ORDER_IP" ]]; then
               echo "All backend LoadBalancer IPs assigned!"
@@ -85,16 +85,14 @@ jobs:
               echo "Order Service IP: $ORDER_IP"
               break
             fi
-            sleep 5 # Wait 5 seconds before next attempt
+            sleep 5
           done
           
           if [[ -z "$PRODUCT_IP" || -z "$ORDER_IP" ]]; then
             echo "Error: One or more LoadBalancer IPs not assigned after timeout."
-            exit 1 # Fail the job if IPs are not obtained
+            exit 1
           fi
           
-          # These are environment variables for subsequent steps in the *same job*
-          # And used to set the job outputs
           echo "PRODUCT_IP=$PRODUCT_IP" >> $GITHUB_ENV
           echo "ORDER_IP=$ORDER_IP" >> $GITHUB_ENV
 
@@ -109,39 +107,38 @@ jobs:
       - name: Logout from Azure
         run: az logout
 
-  # frontend-cd
   deploy_frontend:
     runs-on: ubuntu-latest
     environment: Production
-    needs: deploy_backend # Makes frontend wait for backend IPs
+    needs: deploy_backend
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Azure login using a Service Principal secret
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Login to Azure Container Registry (ACR)
       - name: Login to Azure Container Registry
-        run: az acr login --name ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+        run: az acr login --name ${{ github.event.inputs.aks_acr_name }}
 
       - name: Inject Backend IPs into Frontend main.js
         run: |
-          echo "Injecting IPs into frontend/static/js/main.js"
-          # Ensure frontend/main.js is directly in the path for sed
-          sed -i "s|_PRODUCT_API_URL_|${{ github.event.inputs.product_api_ip }}|g" frontend/main.js
-          sed -i "s|_ORDER_API_URL_|${{ github.event.inputs.order_api_ip }}|g" frontend/main.js
-          
-          # Display the modified file content for debugging
+          PRODUCT_IP="${{ github.event.inputs.product_api_ip }}"
+          ORDER_IP="${{ github.event.inputs.order_api_ip }}"
+          if [ -z "$PRODUCT_IP" ]; then PRODUCT_IP="${{ needs.deploy_backend.outputs.PRODUCT_API_IP }}"; fi
+          if [ -z "$ORDER_IP" ]; then ORDER_IP="${{ needs.deploy_backend.outputs.ORDER_API_IP }}"; fi
+
+          echo "Injecting IPs into frontend/main.js"
+          sed -i "s|_PRODUCT_API_URL_|$PRODUCT_IP|g" frontend/main.js
+          sed -i "s|_ORDER_API_URL_|$ORDER_IP|g" frontend/main.js
+
           echo "--- Modified main.js content ---"
           cat frontend/main.js
           echo "---------------------------------"
 
-      # Build and Push Docker image for Frontend
       - name: Build and Push Frontend Image
         run: |
           docker build -t ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest ./frontend/
@@ -157,7 +154,6 @@ jobs:
         run: |
           echo "Deploying frontend with latest tag to AKS cluster: ${{ github.event.inputs.aks_cluster_name }}"
           cd k8s/
-          # Ensure frontend-service.yaml is configured with your ACR
           kubectl apply -f frontend.yaml
 
       - name: Logout from Azure (AKS deployment)
