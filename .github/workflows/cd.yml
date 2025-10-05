@@ -132,19 +132,18 @@ jobs:
 
       - name: Inject Backend IPs into Frontend main.js
         run: |
-          echo "Injecting IPs into frontend/main.js"
+          echo "Injecting backend IPs into frontend/main.js"
           sed -i "s|_PRODUCT_API_URL_|${{ needs.deploy_backend.outputs.PRODUCT_API_IP }}|g" frontend/main.js
           sed -i "s|_ORDER_API_URL_|${{ needs.deploy_backend.outputs.ORDER_API_IP }}|g" frontend/main.js
-          echo "--- Modified main.js content ---"
           cat frontend/main.js
 
       - name: Build and Push Frontend Image
         run: |
           ACR_NAME=${{ github.event.inputs.aks_acr_name }}
-          IMAGE_NAME="$ACR_NAME.azurecr.io/frontend:latest"
-          echo "Building image: $IMAGE_NAME"
-          docker build -t $IMAGE_NAME ./frontend/
-          docker push $IMAGE_NAME
+          IMAGE_TAG="$ACR_NAME.azurecr.io/frontend:latest"
+          echo "Building image: $IMAGE_TAG"
+          docker build -t $IMAGE_TAG ./frontend
+          docker push $IMAGE_TAG
 
       - name: Set Kubernetes context (get AKS credentials)
         uses: azure/aks-set-context@v3
@@ -154,7 +153,7 @@ jobs:
 
       - name: Deploy Frontend to AKS
         run: |
-          echo "Deploying frontend with latest image to AKS cluster: ${{ github.event.inputs.aks_cluster_name }}"
+          echo "Deploying frontend image to AKS"
           cd k8s/
           kubectl apply -f frontend.yaml
 
