@@ -141,9 +141,10 @@ jobs:
       - name: Build and Push Frontend Image
         run: |
           ACR_NAME=${{ github.event.inputs.aks_acr_name }}
-          echo "Building and pushing image to $ACR_NAME.azurecr.io"
-          docker build -t $ACR_NAME.azurecr.io/frontend:latest ./frontend/
-          docker push $ACR_NAME.azurecr.io/frontend:latest
+          IMAGE_NAME="$ACR_NAME.azurecr.io/frontend:latest"
+          echo "Building image: $IMAGE_NAME"
+          docker build -t $IMAGE_NAME ./frontend/
+          docker push $IMAGE_NAME
 
       - name: Set Kubernetes context (get AKS credentials)
         uses: azure/aks-set-context@v3
