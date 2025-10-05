@@ -119,31 +119,31 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Azure login using a Service Principal secret
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # ✅ Fixed: Properly login to ACR by name
       - name: Login to Azure Container Registry
         run: az acr login --name ${{ github.event.inputs.aks_acr_name }}
 
       - name: Inject Backend IPs into Frontend main.js
         run: |
-          echo "Injecting IPs into frontend/main.js"
+          echo "Injecting backend IPs into frontend/main.js"
           sed -i "s|_PRODUCT_API_URL_|${{ needs.deploy_backend.outputs.PRODUCT_API_IP }}|g" frontend/main.js
           sed -i "s|_ORDER_API_URL_|${{ needs.deploy_backend.outputs.ORDER_API_IP }}|g" frontend/main.js
-          echo "--- Modified main.js content ---"
+          echo "--- Updated main.js ---"
           cat frontend/main.js
 
-      # ✅ FIXED: Use ACR name input instead of undefined secret
+      # ✅ Fixed: Ensure ACR name is set correctly
       - name: Build and Push Frontend Image
         run: |
           echo "Building and pushing frontend image..."
-          ACR_NAME=${{ github.event.inputs.aks_acr_name }}
-          docker build -t $ACR_NAME.azurecr.io/frontend:latest ./frontend/
-          docker push $ACR_NAME.azurecr.io/frontend:latest
+          ACR_NAME="${{ github.event.inputs.aks_acr_name }}"
+          FULL_IMAGE_NAME="$ACR_NAME.azurecr.io/frontend:latest"
+          echo "Full image name: $FULL_IMAGE_NAME"
+          docker build -t $FULL_IMAGE_NAME ./frontend/
+          docker push $FULL_IMAGE_NAME
 
       - name: Set Kubernetes context (get AKS credentials)
         uses: azure/aks-set-context@v3
@@ -157,5 +157,5 @@ jobs:
           cd k8s/
           kubectl apply -f frontend.yaml
 
-      - name: Logout from Azure (AKS deployment)
+      - name: Logout from Azure
         run: az logout
