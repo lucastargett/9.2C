@@ -17,11 +17,11 @@ on:
         required: true
         default: 'lucasacr9c'
       product_api_ip:
-        description: 'External IP of Product Service'
+        description: 'External IP of Product Service (optional override)'
         required: false
         default: ''
       order_api_ip:
-        description: 'External IP of Order Service'
+        description: 'External IP of Order Service (optional override)'
         required: false
         default: ''
 
@@ -29,7 +29,7 @@ jobs:
   deploy_backend:
     runs-on: ubuntu-latest
     environment: Production
-    
+
     outputs:
       PRODUCT_API_IP: ${{ steps.get_product_ip.outputs.external_ip }}
       ORDER_API_IP: ${{ steps.get_order_ip.outputs.external_ip }}
@@ -67,17 +67,17 @@ jobs:
           cd k8s/
           kubectl apply -f product-service.yaml
           kubectl apply -f order-service.yaml
-      
+
       - name: Wait for Backend LoadBalancer IPs
         run: |
           echo "Waiting for Product, Order LoadBalancer IPs to be assigned (up to 5 minutes)..."
           PRODUCT_IP=""
           ORDER_IP=""
-          
+
           for i in $(seq 1 60); do
             echo "Attempt $i/60 to get IPs..."
-            PRODUCT_IP=$(kubectl get service product-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-            ORDER_IP=$(kubectl get service order-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            PRODUCT_IP=$(kubectl get svc product-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            ORDER_IP=$(kubectl get svc order-service-w08e1  -o jsonpath='{.status.loadBalancer.ingress[0].ip}'  2>/dev/null || true)
 
             if [[ -n "$PRODUCT_IP" && -n "$ORDER_IP" ]]; then
               echo "All backend LoadBalancer IPs assigned!"
@@ -87,12 +87,14 @@ jobs:
             fi
             sleep 5
           done
-          
+
           if [[ -z "$PRODUCT_IP" || -z "$ORDER_IP" ]]; then
             echo "Error: One or more LoadBalancer IPs not assigned after timeout."
+            echo "Current services:"
+            kubectl get svc
             exit 1
           fi
-          
+
           echo "PRODUCT_IP=$PRODUCT_IP" >> $GITHUB_ENV
           echo "ORDER_IP=$ORDER_IP" >> $GITHUB_ENV
 
@@ -106,6 +108,7 @@ jobs:
 
       - name: Logout from Azure
         run: az logout
+
 
   deploy_frontend:
     runs-on: ubuntu-latest
@@ -122,18 +125,13 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Login to Azure Container Registry
-        run: az acr login --name ${{ github.event.inputs.aks_acr_name }}
+        run: az acr login --name ${{ secrets.AZURE_CONTAINER_REGISTRY }}
 
       - name: Inject Backend IPs into Frontend main.js
         run: |
-          PRODUCT_IP="${{ github.event.inputs.product_api_ip }}"
-          ORDER_IP="${{ github.event.inputs.order_api_ip }}"
-          if [ -z "$PRODUCT_IP" ]; then PRODUCT_IP="${{ needs.deploy_backend.outputs.PRODUCT_API_IP }}"; fi
-          if [ -z "$ORDER_IP" ]; then ORDER_IP="${{ needs.deploy_backend.outputs.ORDER_API_IP }}"; fi
-
-          echo "Injecting IPs into frontend/main.js"
-          sed -i "s|_PRODUCT_API_URL_|$PRODUCT_IP|g" frontend/main.js
-          sed -i "s|_ORDER_API_URL_|$ORDER_IP|g" frontend/main.js
+          echo "Injecting backend IPs into frontend/main.js"
+          sed -i "s|_PRODUCT_API_URL_|http://${{ needs.deploy_backend.outputs.PRODUCT_API_IP }}:8000|g" frontend/main.js
+          sed -i "s|_ORDER_API_URL_|http://${{ needs.deploy_backend.outputs.ORDER_API_IP }}:8001|g" frontend/main.js
 
           echo "--- Modified main.js content ---"
           cat frontend/main.js
@@ -152,7 +150,7 @@ jobs:
 
       - name: Deploy Frontend to AKS
         run: |
-          echo "Deploying frontend with latest tag to AKS cluster: ${{ github.event.inputs.aks_cluster_name }}"
+          echo "Deploying frontend with latest image..."
           cd k8s/
           kubectl apply -f frontend.yaml
 
