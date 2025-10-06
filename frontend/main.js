@@ -3,33 +3,39 @@
 /* global document, window, fetch, confirm */
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Values are injected by the CD pipeline via sed.
-  // They may be full URLs (http://IP:PORT) or just host/IP.
-  const PRODUCT_API_BASE_URL = '_PRODUCT_API_URL_';
-  const ORDER_API_BASE_URL   = '_ORDER_API_URL_';
+  // Values are injected by the CD pipeline via `sed`
+  // Examples after injection:
+  //   '_PRODUCT_API_URL_' -> 'http://4.254.48.10:8000'
+  //   '_ORDER_API_URL_'   -> 'http://104.209.91.13:8001'
 
-  // Normalize base to an absolute origin with default port if needed.
+  // --- Robust normalization to avoid //host becoming a PATH on the frontend host ---
+  function cleanBase(raw) {
+    // strip surrounding quotes/spaces and any leading/trailing slashes
+    return String(raw).trim().replace(/^['"]+|['"]+$/g, '').replace(/^\/+|\/+$/g, '');
+  }
+
   function normalizeBase(base, defaultPort) {
+    const cleaned = cleanBase(base);
     try {
-      const withScheme = base.startsWith('http://') || base.startsWith('https://')
-        ? base
-        : `http://${base}`;
+      const withScheme = cleaned.startsWith('http://') || cleaned.startsWith('https://')
+        ? cleaned
+        : `http://${cleaned}`;
       const u = new URL(withScheme);
       if (!u.port) u.port = String(defaultPort);
       // return origin only, e.g. http://1.2.3.4:8000
       return `${u.protocol}//${u.hostname}${u.port ? ':' + u.port : ''}`;
     } catch (e) {
-      console.warn('Could not normalize base URL, using as-is:', base, e);
-      return base;
+      console.warn('Could not normalize base URL, using as-is:', cleaned, e);
+      return cleaned;
     }
   }
 
-  const PRODUCT_BASE = normalizeBase(PRODUCT_API_BASE_URL, 8000);
-  const ORDER_BASE   = normalizeBase(ORDER_API_BASE_URL, 8001);
+  // Injected placeholders that the pipeline replaces:
+  const PRODUCT_BASE = normalizeBase('_PRODUCT_API_URL_', 8000);
+  const ORDER_BASE   = normalizeBase('_ORDER_API_URL_', 8001);
 
-  // Helpful logs (check DevTools console once the page loads)
   console.log('[Frontend] PRODUCT_BASE:', PRODUCT_BASE);
-  console.log('[Frontend] ORDER_BASE  :', ORDER_BASE);
+  console.log('[Frontend] ORDER_BASE  :',   ORDER_BASE);
 
   // DOM elements
   const messageBox      = document.getElementById('message-box');
@@ -362,7 +368,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       try {
         showMessage(`Updating status for order ${orderId} to "${newStatus}"...`, 'info');
-        const response = await fetch(`${ORDER_BASE}/orders/${orderId}/status?new_status=${encodeURIComponent(newStatus)}`, { method: 'PATCH' });
+        const response = await fetch(
+          `${ORDER_BASE}/orders/${orderId}/status?new_status=${encodeURIComponent(newStatus)}`,
+          { method: 'PATCH' }
+        );
 
         if (!response.ok) {
           let detail = `HTTP error! status: ${response.status}`;
