@@ -130,11 +130,11 @@ jobs:
 
       - name: Inject Backend IPs into Frontend main.js
         run: |
-          echo "Injecting IPs into frontend/main.js..."
-          sed -i "s|_PRODUCT_API_URL_|${{ needs.deploy_backend.outputs.PRODUCT_API_IP }}|g" frontend/main.js
-          sed -i "s|_ORDER_API_URL_|${{ needs.deploy_backend.outputs.ORDER_API_IP }}|g" frontend/main.js
-          echo "--- Modified main.js ---"
-          cat frontend/main.js
+          echo "Injecting IPs into frontend/main.js"
+          sed -i 's|_PRODUCT_API_URL_|http://${{ needs.deploy_backend.outputs.PRODUCT_API_IP }}:8000|g' frontend/main.js
+          sed -i 's|_ORDER_API_URL_|http://${{ needs.deploy_backend.outputs.ORDER_API_IP }}:8001|g' frontend/main.js
+          echo "--- Modified main.js content ---"
+          grep -E 'PRODUCT_API_URL|ORDER_API_URL' -n frontend/main.js || true
 
       - name: Build and Push Frontend Image
         run: |
